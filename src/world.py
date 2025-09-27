@@ -113,7 +113,7 @@ class OpenWorld:
     def _build_mesh(self) -> Mesh:
         vertices: List[Vec3] = []
         triangles: List[int] = []
-        colors: List[Vec3] = []
+        colors: List = []
         for ix in range(self.resolution):
             for iz in range(self.resolution):
                 x = ix * self.step - self.half
@@ -128,16 +128,16 @@ class OpenWorld:
                 triangles.extend([i, i + row, i + 1, i + 1, i + row, i + row + 1])
         return Mesh(vertices=vertices, triangles=triangles, colors=colors, mode="triangle")
 
-    def _color_for_height(self, height: float) -> Vec3:
+    def _color_for_height(self, height: float):
         if height < self.water_level + 0.6:
-            return Vec3(0.2, 0.35, 0.55)
+            return color.rgb(40, 90, 140)
         if height < self.water_level + 2.5:
-            return Vec3(0.65, 0.6, 0.45)
+            return color.rgb(190, 170, 130)
         if height < 8:
-            return Vec3(0.2, 0.55, 0.25)
+            return color.rgb(60, 150, 80)
         if height < 14:
-            return Vec3(0.35, 0.45, 0.35)
-        return Vec3(0.75, 0.75, 0.8)
+            return color.rgb(90, 120, 90)
+        return color.rgb(200, 200, 210)
 
     def _scatter_foliage(self) -> None:
         for _ in range(250):

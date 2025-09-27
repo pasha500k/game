@@ -16,6 +16,7 @@ from ursina import (
     Sky,
     Vec3,
     color,
+    time,
 )
 
 from . import settings
@@ -49,7 +50,8 @@ class LumiteBeacon(Entity):
     def distance_to(self, position: Vec3) -> float:
         return (self.world_position - position).length()
 
-    def update(self, dt: float) -> None:
+    def update(self) -> None:  # type: ignore[override]
+        dt = time.dt
         self.rotation_y += dt * 18
         if self.activated:
             self._core.y = 2.4 + math.sin(self.rotation_y * 0.2) * 0.3
@@ -249,8 +251,6 @@ class OpenWorld:
         ambient_value = settings.NIGHT_AMBIENT + max(0.0, sun_y) * (settings.MIDDAY_AMBIENT - settings.NIGHT_AMBIENT)
         self.ambient.color = color.rgba(150, 170, 220, int(ambient_value * 255))
         self.sky.color = color_mix.tint(0.5)
-        for beacon in self.beacons:
-            beacon.update(dt)
 
     def _sun_color_for_phase(self, phase: float):
         if phase < 0.25:

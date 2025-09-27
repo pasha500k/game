@@ -1,239 +1,158 @@
-"""Entry point for the Elarian Skies adventure."""
+"""Entry point for the Elarian Skies 3D experience."""
 
 from __future__ import annotations
 
-import math
-from typing import List
+from typing import Iterable
 
-import pygame
+from ursina import Ursina, Vec3, application, time, window
 
-from . import console, entities, settings, story, ui, world
-
-
-class Game:
-    def __init__(self) -> None:
-        pygame.init()
-        pygame.display.set_caption("Elarian Skies")
-        self.screen = pygame.display.set_mode((settings.SCREEN_WIDTH, settings.SCREEN_HEIGHT))
-        self.clock = pygame.time.Clock()
-
-        self.tile_map = world.World(settings.WORLD_WIDTH, settings.WORLD_HEIGHT)
-        self.player = entities.Player(self.tile_map.get_spawn_point())
-        self.npcs: List[entities.NPC] = self._create_npcs()
-        self.story_manager = story.StoryManager(self.tile_map.story_beacons)
-        self.story_manager.push_event(
-            "Awakening",
-            "You emerge in the heart of Elaria as dawn paints the sky. Find Sage Aria within the central village.",
-        )
-
-        self.ui = ui.UIOverlay()
-        self.console = console.Console(pygame.font.SysFont("consolas", settings.CONSOLE_FONT_SIZE))
-        self._register_console_commands()
-
-        self.game_time = 0.0
-        self.camera = pygame.Rect(0, 0, settings.SCREEN_WIDTH, settings.SCREEN_HEIGHT)
-        self.journal_visible = True
-        try:
-            pygame.scrap.init()
-        except pygame.error:
-            pass
-
-    def _create_npcs(self) -> List[entities.NPC]:
-        spawn_x, spawn_y = self.tile_map.get_spawn_point()
-        sage_dialogue = [
-            entities.DialogueLine("Sage Aria", "Traveller, the Lumite has dimmed. Will you rekindle the beacons?"),
-            entities.DialogueLine("Sage Aria", "The Radiant Compass will guide you—follow the hum in your chest."),
-            entities.DialogueLine("Sage Aria", "When all five burn bright, return to me."),
-        ]
-        scout_dialogue = [
-            entities.DialogueLine("Scout Ryn", "I mapped a glacier north-east of here. Beautiful, but treacherous."),
-            entities.DialogueLine("Scout Ryn", "Keep an eye on your stamina while sprinting."),
-        ]
-        tinkerer_dialogue = [
-            entities.DialogueLine("Tinkerer Lio", "I once crafted gliders. Bring me Lumite and I might build another."),
-        ]
-        return [
-            entities.NPC("Sage Aria", pygame.Vector2(spawn_x + 120, spawn_y - 40), pygame.Color(200, 160, 255), sage_dialogue),
-            entities.NPC("Scout Ryn", pygame.Vector2(spawn_x - 180, spawn_y + 140), pygame.Color(120, 200, 255), scout_dialogue),
-            entities.NPC("Tinkerer Lio", pygame.Vector2(spawn_x + 80, spawn_y + 200), pygame.Color(255, 200, 120), tinkerer_dialogue),
-        ]
-
-    def _register_console_commands(self) -> None:
-        self.console.add_command("help", "Show available commands.", lambda args: self.console.describe_commands())
-        self.console.add_command("heal", "heal <amount> — restore vitality.", self._cmd_heal)
-        self.console.add_command("give", "give <item> [count] — add items to inventory.", self._cmd_give)
-        self.console.add_command("teleport", "teleport <x> <y> — move to tile coordinates.", self._cmd_teleport)
-        self.console.add_command("time", "time <hours[:minutes]> — set the world time.", self._cmd_time)
-        self.console.add_command("whereami", "Display current tile coordinates.", self._cmd_whereami)
-        self.console.add_command("quest", "Display quest journal in console.", self._cmd_quest)
-        self.console.add_command("spawn", "spawn <name> — conjure a friendly guide near you.", self._cmd_spawn)
-
-    def _cmd_heal(self, args: List[str]) -> str:
-        amount = float(args[0]) if args else 50
-        self.player.heal(amount)
-        return f"Vitality restored by {amount:.0f}."
-
-    def _cmd_give(self, args: List[str]) -> str:
-        if not args:
-            raise ValueError("Usage: give <item> [count]")
-        item = args[0].title()
-        count = int(args[1]) if len(args) > 1 else 1
-        self.player.add_item(item, count)
-        return f"Added {count}x {item}."
-
-    def _cmd_teleport(self, args: List[str]) -> str:
-        if len(args) < 2:
-            raise ValueError("Usage: teleport <x> <y>")
-        tile_x, tile_y = int(args[0]), int(args[1])
-        if not self.tile_map.is_walkable(tile_x, tile_y):
-            raise ValueError("Destination not walkable.")
-        self.player.position.update(tile_x * settings.TILE_SIZE + settings.TILE_SIZE / 2, tile_y * settings.TILE_SIZE + settings.TILE_SIZE / 2)
-        return f"Teleported to tile ({tile_x}, {tile_y})."
-
-    def _cmd_time(self, args: List[str]) -> str:
-        if not args:
-            raise ValueError("Usage: time <hours[:minutes]>")
-        part = args[0]
-        if ":" in part:
-            hours_str, minutes_str = part.split(":", 1)
-            hours = int(hours_str)
-            minutes = int(minutes_str)
-        else:
-            hours = int(part)
-            minutes = 0
-        day_fraction = ((hours % 24) + minutes / 60.0) / 24.0
-        self.game_time = day_fraction * settings.DAY_LENGTH_SECONDS
-        return f"Time set to {hours:02d}:{minutes:02d}."
-
-    def _cmd_whereami(self, args: List[str]) -> str:  # noqa: ARG002 - console API
-        tile_x = int(self.player.position.x // settings.TILE_SIZE)
-        tile_y = int(self.player.position.y // settings.TILE_SIZE)
-        return f"You are at tile ({tile_x}, {tile_y})."
-
-    def _cmd_quest(self, args: List[str]) -> str:  # noqa: ARG002 - console API
-        return "\n".join(self.story_manager.quest_journal_text())
-
-    def _cmd_spawn(self, args: List[str]) -> str:
-        if not args:
-            raise ValueError("Usage: spawn <name>")
-        name = " ".join(word.capitalize() for word in args)
-        position = self.player.position + pygame.Vector2(80, 0)
-        dialogue = [
-            entities.DialogueLine(name, "I have been summoned by the Radiant Compass."),
-            entities.DialogueLine(name, "Lead on; the beacons call."),
-        ]
-        new_npc = entities.NPC(name, position, pygame.Color(255, 255, 255), dialogue)
-        self.npcs.append(new_npc)
-        return f"{name} joins you as a guide."
-
-    def run(self) -> None:
-        running = True
-        while running:
-            dt = self.clock.tick(settings.FPS) / 1000.0
-            self.game_time = (self.game_time + dt) % settings.DAY_LENGTH_SECONDS
-
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
-                elif event.type == pygame.KEYDOWN and event.key == pygame.K_F11:
-                    pygame.display.toggle_fullscreen()
-                elif event.type == pygame.KEYDOWN and event.key == pygame.K_TAB:
-                    self.journal_visible = not self.journal_visible
-                elif event.type == pygame.KEYDOWN and event.key in (pygame.K_ESCAPE,):
-                    if self.console.active:
-                        self.console.toggle()
-                    else:
-                        running = False
-                elif event.type == pygame.KEYDOWN and event.key == pygame.K_BACKQUOTE:
-                    self.console.toggle()
-                self.console.handle_event(event)
-
-            keys = pygame.key.get_pressed()
-            if not self.console.active:
-                self.player.handle_input(dt, self.tile_map, keys)
-            self.player.update(dt)
-            self.story_manager.update(dt)
-            self.story_manager.check_beacon_proximity(self.player.position)
-
-            if not self.console.active and keys[pygame.K_SPACE]:
-                self._handle_interaction()
-
-            self._update_camera()
-            self._render()
-
-        pygame.quit()
-
-    def _handle_interaction(self) -> None:
-        for npc in self.npcs:
-            if self.player.position.distance_to(npc.position) <= npc.talk_radius:
-                line = npc.interact()
-                if line:
-                    self.story_manager.push_event(line.speaker, line.text)
-                    self.story_manager.notify_npc_interaction(npc.name)
-                    self.story_manager.finalize_if_ready(npc.name)
-                break
-
-    def _update_camera(self) -> None:
-        center_x = self.player.position.x - settings.SCREEN_WIDTH / 2
-        center_y = self.player.position.y - settings.SCREEN_HEIGHT / 2
-        self.camera.left = int(max(0, min(center_x, self.tile_map.width * settings.TILE_SIZE - settings.SCREEN_WIDTH)))
-        self.camera.top = int(max(0, min(center_y, self.tile_map.height * settings.TILE_SIZE - settings.SCREEN_HEIGHT)))
-
-    def _render(self) -> None:
-        self.screen.fill((10, 10, 16))
-        self.tile_map.draw(self.screen, self.camera)
-
-        for beacon in self.tile_map.story_beacons:
-            world_pos = (
-                beacon[0] * settings.TILE_SIZE + settings.TILE_SIZE / 2 - self.camera.left,
-                beacon[1] * settings.TILE_SIZE + settings.TILE_SIZE / 2 - self.camera.top,
-            )
-            pygame.draw.circle(self.screen, pygame.Color(255, 220, 120), world_pos, 14)
-            pulse = 12 + 4 * math.sin(pygame.time.get_ticks() / 300)
-            pygame.draw.circle(self.screen, pygame.Color(255, 220, 120, 60), world_pos, int(pulse), 2)
-
-        for npc in self.npcs:
-            npc.draw(self.screen, self.camera)
-
-        self.player.draw(self.screen, self.camera)
-        self._apply_lighting()
-        self.ui.draw_hud(self.screen, self.player, self.game_time)
-        if self.journal_visible:
-            self.ui.draw_journal(self.screen, self.story_manager)
-        self.ui.draw_story_prompt(self.screen, self.story_manager)
-        self.ui.draw_minimap(self.screen, self.tile_map, self.player.get_rect(), self.camera)
-        self.console.draw(self.screen)
-
-        if self.story_manager.has_won():
-            self._draw_victory_banner()
-
-        pygame.display.flip()
-
-    def _apply_lighting(self) -> None:
-        day_progress = (self.game_time % settings.DAY_LENGTH_SECONDS) / settings.DAY_LENGTH_SECONDS
-        overlay: pygame.Surface | None = None
-        if 0.7 < day_progress <= 0.85:
-            overlay = pygame.Surface(self.screen.get_size(), pygame.SRCALPHA)
-            overlay.fill(settings.DUSK_TINT)
-        elif day_progress > 0.85 or day_progress < 0.25:
-            overlay = pygame.Surface(self.screen.get_size(), pygame.SRCALPHA)
-            overlay.fill(settings.NIGHT_TINT)
-        if overlay:
-            self.screen.blit(overlay, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-
-    def _draw_victory_banner(self) -> None:
-        banner = pygame.Surface((self.screen.get_width(), 120), pygame.SRCALPHA)
-        banner.fill((20, 80, 60, 200))
-        self.screen.blit(banner, (0, self.screen.get_height() // 2 - 60))
-        font = pygame.font.SysFont("georgia", 48)
-        text = font.render("Elaria is reborn. Thank you for playing!", True, pygame.Color(255, 255, 255))
-        text_rect = text.get_rect(center=(self.screen.get_width() // 2, self.screen.get_height() // 2))
-        self.screen.blit(text, text_rect)
+from . import settings
+from .console import CommandConsole
+from .entities import DialogueLine, NPC, Player
+from .story import StoryManager
+from .ui import HUD
+from .world import OpenWorld
 
 
 def main() -> None:
-    game = Game()
-    game.run()
+    app = Ursina(title=settings.GAME_TITLE, vsync=True, borderless=False)
+    window.fullscreen = False
+    window.color = (0, 0, 0, 1)
+
+    world = OpenWorld(settings.WORLD_SEED)
+    player = Player(world.spawn_point)
+    hud = HUD()
+    console = CommandConsole()
+    story_manager = StoryManager(world.beacons, world.guides)
+
+    _register_console_commands(console, player, world, story_manager)
+
+    def update() -> None:  # type: ignore[override]
+        dt = time.dt
+        if not console.enabled:
+            player.update(dt)
+        world.update(dt)
+        story_manager.update(dt, player)
+        hud.update(dt, player, story_manager, world.beacons)
+
+    def input(key: str) -> None:  # type: ignore[override]
+        if key == "`":
+            console.toggle()
+            return
+        if console.enabled:
+            console.feed_key(key)
+            return
+        if key == "escape":
+            application.quit()
+        elif key == "f11":
+            window.fullscreen = not window.fullscreen
+        elif key == "e":
+            _interact_with_nearby(player, world.guides, story_manager, console)
+
+    app.update = update  # type: ignore[assignment]
+    app.input = input  # type: ignore[assignment]
+    app.run()
+
+
+def _interact_with_nearby(player: Player, guides: Iterable[NPC], story_manager: StoryManager, console: CommandConsole) -> None:
+    nearest = None
+    nearest_distance = settings.PLAYER_INTERACT_DISTANCE
+    for guide in guides:
+        distance = (guide.world_position - player.position).length()
+        if distance <= nearest_distance:
+            nearest_distance = distance
+            nearest = guide
+    if nearest is None:
+        console.print_text("No one nearby to talk to.")
+        return
+    line = story_manager.interact_with_npc(nearest)
+    if line:
+        console.print_text(f"{line.speaker}: {line.text}")
+
+
+def _register_console_commands(console: CommandConsole, player: Player, world: OpenWorld, story_manager: StoryManager) -> None:
+    console.add_command("help", "Show available commands.", lambda args: console.describe_commands())
+    console.add_command("heal", "heal [amount] — restore vitality.", lambda args: _cmd_heal(args, player))
+    console.add_command("give", "give <item> [count] — add inventory items.", lambda args: _cmd_give(args, player))
+    console.add_command("teleport", "teleport <x> <z> — warp to a surface coordinate.", lambda args: _cmd_teleport(args, player, world))
+    console.add_command("time", "time <hours[:minutes]> — set the world time.", lambda args: _cmd_time(args, world))
+    console.add_command("whereami", "Display current world coordinates.", lambda args: _cmd_whereami(player))
+    console.add_command("quest", "Display the current objective list.", lambda args: _cmd_quest(story_manager))
+    console.add_command("spawn", "spawn <name> — summon a guide.", lambda args: _cmd_spawn(args, player, world, story_manager))
+
+
+def _cmd_heal(args: Iterable[str], player: Player) -> str:
+    parts = list(args)
+    amount = float(parts[0]) if parts else 40.0
+    player.heal(amount)
+    return f"Healed {amount:.0f} vitality."
+
+
+def _cmd_give(args: Iterable[str], player: Player) -> str:
+    parts = list(args)
+    if not parts:
+        raise ValueError("Usage: give <item> [count]")
+    item = parts[0].title()
+    count = int(parts[1]) if len(parts) > 1 else 1
+    player.add_item(item, count)
+    return f"Added {count}x {item}."
+
+
+def _cmd_teleport(args: Iterable[str], player: Player, world: OpenWorld) -> str:
+    parts = list(args)
+    if len(parts) < 2:
+        raise ValueError("Usage: teleport <x> <z>")
+    x = float(parts[0])
+    z = float(parts[1])
+    y = world.height_at(x, z) + 3.0
+    player.teleport(Vec3(x, y, z))
+    return f"Teleported to ({x:.1f}, {y:.1f}, {z:.1f})."
+
+
+def _cmd_time(args: Iterable[str], world: OpenWorld) -> str:
+    parts = list(args)
+    if not parts:
+        raise ValueError("Usage: time <hours[:minutes]>")
+    token = parts[0]
+    if ":" in token:
+        hour_str, minute_str = token.split(":", 1)
+        hours = int(hour_str)
+        minutes = int(minute_str)
+    else:
+        hours = int(token)
+        minutes = 0
+    total_seconds = ((hours % 24) + minutes / 60.0) / 24.0 * settings.DAY_LENGTH_SECONDS
+    world.time_of_day = total_seconds
+    return f"Set time to {hours:02d}:{minutes:02d}."
+
+
+def _cmd_whereami(player: Player) -> str:
+    pos = player.position
+    return f"Position — x:{pos.x:.1f} y:{pos.y:.1f} z:{pos.z:.1f}"
+
+
+def _cmd_quest(story_manager: StoryManager) -> str:
+    lines = [f"Beacons lit: {story_manager.activated_beacons()}/{story_manager.total_beacons()}"]
+    lines.extend(story_manager.quest_summary())
+    return "\n".join(lines)
+
+
+def _cmd_spawn(args: Iterable[str], player: Player, world: OpenWorld, story_manager: StoryManager) -> str:
+    parts = list(args)
+    if not parts:
+        raise ValueError("Usage: spawn <name>")
+    name = " ".join(word.capitalize() for word in parts)
+    offset = Vec3(4.0, 0, 4.0)
+    target = player.position + offset
+    target_y = world.height_at(target.x, target.z) + 1.2
+    dialogue = [
+        DialogueLine(name, "I answer your call, Pathfinder."),
+        DialogueLine(name, "Lead the way; the beacons await."),
+    ]
+    npc = NPC(name, Vec3(target.x, target_y, target.z), (255, 255, 255), dialogue)
+    world.guides.append(npc)
+    story_manager.guides.append(npc)
+    return f"{name} joins you on the trail."
 
 
 if __name__ == "__main__":

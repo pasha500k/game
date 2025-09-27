@@ -1,103 +1,95 @@
-"""Narrative and quest progression for the open-world adventure."""
+"""Story orchestration for Lumite Horizon."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import List, Optional
-
-import pygame
+from collections import deque
+from typing import Iterable, List
 
 from . import settings
-
-
-@dataclass
-class StoryEvent:
-    title: str
-    description: str
-    duration: float = settings.STORY_DIALOGUE_TIME
+from .entities import DialogueLine, NPC, Player
+from .world import LumiteBeacon
 
 
 class StoryManager:
-    def __init__(self, beacon_positions: List[tuple[int, int]]) -> None:
-        self.beacons = beacon_positions
-        self.current_stage = 0
-        self.events: List[StoryEvent] = []
-        self.active_timer = 0.0
-        self.active_event: Optional[StoryEvent] = None
-        self.objectives: List[str] = []
-        self.completed_beacons: set[int] = set()
-        self.artifact_energy = 0
-        self._init_objectives()
+    """Keeps track of story beats, quest journal, and notifications."""
 
-    def _init_objectives(self) -> None:
-        self.objectives = [
-            "Talk to Sage Aria in the central village.",
-            "Seek out the five Lumite beacons scattered across Elaria.",
-            "Return to Sage Aria once all beacons resonate in harmony.",
-        ]
+    def __init__(self, beacons: Iterable[LumiteBeacon], guides: Iterable[NPC]) -> None:
+        self.beacons: List[LumiteBeacon] = list(beacons)
+        self.guides: List[NPC] = list(guides)
+        self.state = "introduction"
+        self._journal: deque[str] = deque(maxlen=settings.JOURNAL_MAX_ENTRIES)
+        self._notifications: deque[tuple[str, float]] = deque(maxlen=4)
+        self.add_journal_entry("Find Sage Aria in the Radiant encampment.")
 
-    def push_event(self, title: str, description: str, duration: float | None = None) -> None:
-        event = StoryEvent(title, description, duration or settings.STORY_DIALOGUE_TIME)
-        self.events.append(event)
+    # ------------------------------------------------------------------
+    def add_journal_entry(self, text: str) -> None:
+        self._journal.appendleft(text)
+        self._notifications.appendleft((text, 6.0))
 
-    def update(self, dt: float) -> None:
-        if self.active_event:
-            self.active_timer -= dt
-            if self.active_timer <= 0:
-                self.active_event = None
-        elif self.events:
-            self.active_event = self.events.pop(0)
-            self.active_timer = self.active_event.duration
+    def notify(self, text: str, duration: float = 5.0) -> None:
+        self._notifications.appendleft((text, duration))
 
-    def notify_npc_interaction(self, npc_name: str) -> None:
-        if self.current_stage == 0 and npc_name == "Sage Aria":
-            self.current_stage = 1
-            self.push_event("A Call to the Lumite", "Aria entrusts you with the Radiant Compass. The beacons await.")
+    def journal_entries(self) -> List[str]:
+        return list(self._journal)
 
-    def check_beacon_proximity(self, player_position: pygame.Vector2) -> None:
-        for index, (bx, by) in enumerate(self.beacons):
-            if index in self.completed_beacons:
-                continue
-            beacon_pos = pygame.Vector2(bx * settings.TILE_SIZE + settings.TILE_SIZE / 2, by * settings.TILE_SIZE + settings.TILE_SIZE / 2)
-            if player_position.distance_to(beacon_pos) <= settings.STORY_BEACON_RADIUS:
-                self.completed_beacons.add(index)
-                self.artifact_energy += 1
-                self.push_event(
-                    f"Beacon {index + 1} Resonates",
-                    "The Radiant Compass absorbs a surge of Lumite energy.",
-                )
-                if len(self.completed_beacons) == len(self.beacons):
-                    self.current_stage = 2
-                    self.push_event(
-                        "All Beacons Aflame",
-                        "Return to Sage Aria to weave the energies together.",
-                    )
-                break
+    def notifications(self) -> List[str]:
+        return [text for text, _ in self._notifications]
 
-    def quest_journal_text(self) -> List[str]:
-        lines = ["Objectives:"]
-        for idx, text in enumerate(self.objectives, start=1):
-            completed = False
-            if idx == 1 and self.current_stage > 0:
-                completed = True
-            if idx == 2 and len(self.completed_beacons) == len(self.beacons):
-                completed = True
-            if idx == 3 and self.current_stage == 3:
-                completed = True
-            status = "[✔]" if completed else "[ ]"
-            lines.append(f" {status} {text}")
-        lines.append("")
-        lines.append(f"Beacons attuned: {len(self.completed_beacons)} / {len(self.beacons)}")
-        return lines
+    def update(self, dt: float, player: Player) -> None:
+        # Update beacon proximity
+        for beacon in self.beacons:
+            if not beacon.activated and beacon.distance_to(player.position) <= settings.BEACON_ACTIVATION_RADIUS:
+                beacon.activate()
+                self.add_journal_entry(f"Lumite Beacon at {beacon.name} rekindled!")
+                if self.state == "seeking_beacons":
+                    remaining = len([b for b in self.beacons if not b.activated])
+                    if remaining == 0:
+                        self.state = "return_to_sage"
+                        self.add_journal_entry("All beacons blaze again — return to Sage Aria.")
+                elif self.state == "introduction":
+                    self.state = "seeking_beacons"
+                    self.add_journal_entry("Sage Aria's words echo — rekindle every Lumite beacon.")
 
-    def finalize_if_ready(self, npc_name: str) -> None:
-        if npc_name == "Sage Aria" and self.current_stage == 2:
-            self.current_stage = 3
-            self.push_event(
-                "Harmony Forged",
-                "Aria channels the collected Lumite, bathing Elaria in dawnlight. The darkness has been dispelled.",
-            )
+        # Reduce notification timers
+        trimmed: deque[tuple[str, float]] = deque(maxlen=self._notifications.maxlen)
+        for text, timer in self._notifications:
+            timer -= dt
+            if timer > 0:
+                trimmed.append((text, timer))
+        self._notifications = trimmed
 
-    def has_won(self) -> bool:
-        return self.current_stage >= 3
+        for guide in self.guides:
+            guide.cooldown = max(0.0, guide.cooldown - dt)
 
+    def interact_with_npc(self, npc: NPC) -> DialogueLine | None:
+        if npc.cooldown > 0.0:
+            return None
+        npc.cooldown = settings.GUIDE_DIALOGUE_COOLDOWN
+        line = npc.speak()
+        if line:
+            self.notify(f"{line.speaker}: {line.text}")
+            if npc.name == "Sage Aria" and self.state == "introduction":
+                self.state = "seeking_beacons"
+                self.add_journal_entry("The Sage gifted a Radiant Compass — seek the beacons.")
+            elif npc.name == "Sage Aria" and self.state == "return_to_sage":
+                self.state = "victory"
+                self.add_journal_entry("Elaria is reborn. Enjoy the celebration fireworks!")
+        return line
+
+    def quest_summary(self) -> List[str]:
+        if self.state == "introduction":
+            hint = "Meet Sage Aria."
+        elif self.state == "seeking_beacons":
+            remaining = len([b for b in self.beacons if not b.activated])
+            hint = f"Rekindle remaining beacons ({remaining})."
+        elif self.state == "return_to_sage":
+            hint = "Return to Sage Aria in the Radiant encampment."
+        else:
+            hint = "Explore the skies and enjoy the serenity."
+        return [hint]
+
+    def activated_beacons(self) -> int:
+        return len([b for b in self.beacons if b.activated])
+
+    def total_beacons(self) -> int:
+        return len(self.beacons)

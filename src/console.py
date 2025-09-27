@@ -1,152 +1,124 @@
-"""Lightweight developer console that understands simple commands."""
+"""In-game text console that can execute developer commands."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Callable, Dict, List, Tuple
+from collections import deque
+from typing import Callable, Dict, Iterable
 
-import pygame
+from ursina import Entity, Text, camera, color
 
 from . import settings
 
 
-CommandHandler = Callable[[List[str]], str]
+CommandFunc = Callable[[Iterable[str]], str]
 
 
-@dataclass
-class Command:
-    name: str
-    description: str
-    handler: CommandHandler
+class CommandConsole(Entity):
+    """Simple overlay console that captures keyboard characters when opened."""
 
+    def __init__(self) -> None:
+        super().__init__(parent=camera.ui, enabled=False)
+        self._history: deque[str] = deque(maxlen=settings.CONSOLE_HISTORY)
+        self._commands: Dict[str, tuple[str, CommandFunc]] = {}
+        self._buffer: str = ""
 
-class Console:
-    def __init__(self, font: pygame.font.Font) -> None:
-        self.font = font
-        self.active = False
-        self.current_input: str = ""
-        self.history: List[str] = []
-        self.output: List[str] = []
-        self.history_index: int | None = None
-        self.commands: Dict[str, Command] = {}
-
-    def toggle(self) -> None:
-        self.active = not self.active
-        self.history_index = None
-
-    def add_command(self, name: str, description: str, handler: CommandHandler) -> None:
-        self.commands[name.lower()] = Command(name.lower(), description, handler)
-
-    def handle_event(self, event: pygame.event.Event) -> None:
-        if not self.active:
-            return
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_ESCAPE:
-                self.toggle()
-                return
-            if event.key == pygame.K_RETURN:
-                self._commit_command()
-                return
-            if event.key == pygame.K_BACKSPACE:
-                self.current_input = self.current_input[:-1]
-                return
-            if event.key == pygame.K_TAB:
-                self._auto_complete()
-                return
-            if event.key == pygame.K_UP:
-                self._history_previous()
-                return
-            if event.key == pygame.K_DOWN:
-                self._history_next()
-                return
-            if event.key == pygame.K_v and pygame.key.get_mods() & pygame.KMOD_CTRL:
-                try:
-                    clipboard = pygame.scrap.get(pygame.SCRAP_TEXT)
-                    if clipboard:
-                        self.current_input += clipboard.decode("utf-8")
-                except pygame.error:
-                    pass
-                return
-            if event.unicode and event.unicode.isprintable():
-                self.current_input += event.unicode
-
-    def _history_previous(self) -> None:
-        if not self.history:
-            return
-        if self.history_index is None:
-            self.history_index = len(self.history) - 1
-        else:
-            self.history_index = max(0, self.history_index - 1)
-        self.current_input = self.history[self.history_index]
-
-    def _history_next(self) -> None:
-        if self.history_index is None:
-            return
-        self.history_index += 1
-        if self.history_index >= len(self.history):
-            self.history_index = None
-            self.current_input = ""
-        else:
-            self.current_input = self.history[self.history_index]
-
-    def _auto_complete(self) -> None:
-        if not self.current_input:
-            return
-        parts = self.current_input.split()
-        if len(parts) == 1:
-            matches = [name for name in self.commands if name.startswith(parts[0].lower())]
-            if len(matches) == 1:
-                self.current_input = matches[0] + " "
-            elif matches:
-                self.output.append("Possible: " + ", ".join(matches))
-        else:
-            # Later support sub-command hints
-            pass
-
-    def _commit_command(self) -> None:
-        text = self.current_input.strip()
-        if not text:
-            return
-        self.history.append(text)
-        if len(self.history) > settings.CONSOLE_HISTORY:
-            self.history = self.history[-settings.CONSOLE_HISTORY :]
-        self.output.append(f"> {text}")
-        self.current_input = ""
-        self.history_index = None
-
-        parts = text.split()
-        command_name = parts[0].lower()
-        args = parts[1:]
-        if command_name not in self.commands:
-            self.output.append("Unknown command. Type 'help' for a list.")
-            return
-        try:
-            response = self.commands[command_name].handler(args)
-        except Exception as exc:  # noqa: BLE001 - we want robust console handling
-            response = f"Error: {exc}"
-        if response:
-            for line in response.splitlines():
-                self.output.append(line)
-
-    def draw(self, surface: pygame.Surface) -> None:
-        if not self.active:
-            return
-
-        overlay = pygame.Surface((surface.get_width(), surface.get_height() // 3), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 190))
-        surface.blit(overlay, (0, surface.get_height() - overlay.get_height()))
-
-        y = surface.get_height() - overlay.get_height() + 10
-        for line in self.output[-8:]:
-            text_surface = self.font.render(line, True, pygame.Color(220, 220, 220))
-            surface.blit(text_surface, (20, y))
-            y += text_surface.get_height() + 4
-
-        caret_surface = self.font.render("> " + self.current_input + ("_" if pygame.time.get_ticks() % 1000 < 500 else ""), True, pygame.Color(255, 255, 255)
+        self._background = Entity(
+            parent=self,
+            model="quad",
+            color=color.rgba(15, 18, 25, 220),
+            scale=(1.45, 0.55),
+            position=(0, -0.35),
         )
-        surface.blit(caret_surface, (20, y + 6))
+        self._log_text = Text(
+            parent=self._background,
+            position=(-0.68, 0.16),
+            origin=(0, 0),
+            text="",
+            scale=0.015,
+            line_height=1.1,
+            color=color.rgb(*settings.HUD_TEXT_COLOR),
+        )
+        self._input_text = Text(
+            parent=self._background,
+            position=(-0.68, -0.18),
+            origin=(0, 0),
+            text="> ",
+            scale=0.017,
+            line_height=1.0,
+            color=color.rgb(180, 240, 255),
+        )
+
+    # ------------------------------------------------------------------
+    # Console lifecycle
+    def toggle(self) -> None:
+        self.enabled = not self.enabled
+        if self.enabled:
+            self._buffer = ""
+            self._render()
+
+    def add_command(self, name: str, description: str, callback: CommandFunc) -> None:
+        self._commands[name.lower()] = (description, callback)
+
+    # ------------------------------------------------------------------
+    def feed_key(self, key: str) -> None:
+        if not self.enabled:
+            return
+        if key == "enter":
+            self._execute_current_buffer()
+        elif key == "escape":
+            self.toggle()
+        elif key == "backspace":
+            self._buffer = self._buffer[:-1]
+            self._render()
+        elif key == "tab":
+            self._autocomplete()
+        elif len(key) == 1 and len(self._buffer) < settings.CONSOLE_MAX_COMMAND:
+            self._buffer += key
+            self._render()
+
+    def _execute_current_buffer(self) -> None:
+        text = self._buffer.strip()
+        if not text:
+            self._history.append("")
+            self._render()
+            return
+        self._history.append(f"> {text}")
+        parts = text.split()
+        command, *args = parts
+        command = command.lower()
+        if command in self._commands:
+            try:
+                result = self._commands[command][1](args)
+            except Exception as exc:  # pragma: no cover - debugging aid
+                result = f"Error: {exc}"
+        else:
+            result = f"Unknown command '{command}'. Type 'help' for a list."
+        if result:
+            for line in result.splitlines():
+                self._history.append(line)
+        self._buffer = ""
+        self._render()
+
+    def _render(self) -> None:
+        log_text = "\n".join(self._history)
+        self._log_text.text = log_text
+        self._input_text.text = f"> {self._buffer}"
+
+    def _autocomplete(self) -> None:
+        if not self._buffer:
+            return
+        matches = [name for name in self._commands if name.startswith(self._buffer.lower())]
+        if len(matches) == 1:
+            self._buffer = matches[0] + " "
+            self._render()
 
     def describe_commands(self) -> str:
-        lines = [f"{cmd.name}: {cmd.description}" for cmd in self.commands.values()]
-        return "\n".join(sorted(lines))
+        rows = ["Available commands:"]
+        for name, (description, _) in sorted(self._commands.items()):
+            rows.append(f"  {name} — {description}")
+        return "\n".join(rows)
 
+    def print_text(self, text: str) -> None:
+        for line in text.splitlines():
+            self._history.append(line)
+        self._render()

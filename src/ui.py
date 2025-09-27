@@ -1,93 +1,81 @@
-"""Heads-up display and overlay rendering."""
+"""Heads-up display elements for the adventure."""
 
 from __future__ import annotations
 
-from typing import List
+import math
+from typing import Iterable
 
-import pygame
+from ursina import Entity, Text, camera, color
 
-from . import settings, story, world
+from . import settings
+from .entities import Player
+from .story import StoryManager
+from .world import LumiteBeacon
 
 
-class UIOverlay:
+class HUD(Entity):
     def __init__(self) -> None:
-        self.font = pygame.font.SysFont("arial", 22)
-        self.small_font = pygame.font.SysFont("arial", 18)
-        self.large_font = pygame.font.SysFont("georgia", 32)
+        super().__init__(parent=camera.ui)
+        self.reticle = Text(text="✦", color=color.rgb(*settings.RETICLE_COLOR), origin=(0, 0), position=(0, 0))
+        self.reticle.scale = 0.018
 
-    def draw_hud(self, surface: pygame.Surface, player, current_time: float) -> None:
-        self._draw_bars(surface, player)
-        self._draw_clock(surface, current_time)
+        self.health_bg = Entity(parent=self, model="quad", color=color.rgba(120, 20, 20, 200), position=(-0.7, -0.45), scale=(0.32, 0.028))
+        self.health_fill = Entity(parent=self.health_bg, model="quad", color=color.rgb(255, 60, 60), scale=(1, 1), origin=(-0.5, 0))
+        self.stamina_bg = Entity(parent=self, model="quad", color=color.rgba(20, 80, 20, 200), position=(-0.7, -0.50), scale=(0.32, 0.028))
+        self.stamina_fill = Entity(parent=self.stamina_bg, model="quad", color=color.rgb(80, 220, 120), scale=(1, 1), origin=(-0.5, 0))
 
-    def _draw_bars(self, surface: pygame.Surface, player) -> None:
-        bar_width = 280
-        bar_height = 20
-        margin = 20
+        self.notification_text = Text(parent=self, text="", position=(-0.7, 0.45), origin=(0, 0), scale=0.015, color=color.rgb(*settings.HUD_TEXT_COLOR))
+        self.quest_text = Text(parent=self, text="", position=(0.55, 0.4), origin=(0.5, 0), scale=0.015, color=color.rgb(*settings.HUD_TEXT_COLOR))
+        self.journal_text = Text(parent=self, text="", position=(0.65, 0.05), origin=(0.5, 0), scale=0.012, color=color.rgb(180, 220, 255), line_height=1.1)
+        self.compass_text = Text(parent=self, text="", position=(0, -0.45), origin=(0, 0), scale=0.016, color=color.rgb(220, 230, 255))
 
-        def draw_bar(label: str, ratio: float, color: pygame.Color, offset: int) -> None:
-            pygame.draw.rect(surface, pygame.Color(30, 30, 30), (margin, margin + offset, bar_width, bar_height), border_radius=8)
-            inner_width = int(bar_width * max(0.0, min(1.0, ratio)))
-            pygame.draw.rect(surface, color, (margin, margin + offset, inner_width, bar_height), border_radius=8)
-            text = self.small_font.render(label, True, pygame.Color(255, 255, 255))
-            surface.blit(text, (margin + 6, margin + offset - 2))
+        self._compass_timer = 0.0
 
-        draw_bar("Vitality", player.health / player.max_health, pygame.Color(200, 60, 60), 0)
-        draw_bar("Stamina", player.energy / player.max_energy, pygame.Color(70, 200, 150), bar_height + 10)
+    def update(self, dt: float, player: Player, story: StoryManager, beacons: Iterable[LumiteBeacon]) -> None:
+        self.health_fill.scale_x = max(0.02, player.health_ratio())
+        self.stamina_fill.scale_x = max(0.02, player.stamina_ratio())
 
-    def _draw_clock(self, surface: pygame.Surface, current_time: float) -> None:
-        day_progress = (current_time % settings.DAY_LENGTH_SECONDS) / settings.DAY_LENGTH_SECONDS
-        hours = int(day_progress * 24)
-        minutes = int((day_progress * 24 - hours) * 60)
-        clock_text = self.font.render(f"Elarian Time {hours:02d}:{minutes:02d}", True, pygame.Color(255, 255, 255))
-        surface.blit(clock_text, (settings.SCREEN_WIDTH - clock_text.get_width() - 20, 20))
+        notifications = story.notifications()
+        self.notification_text.text = "\n".join(notifications[:3])
+        quest_lines = [f"Beacons lit: {story.activated_beacons()}/{story.total_beacons()}"] + story.quest_summary()
+        self.quest_text.text = "\n".join(quest_lines)
 
-    def draw_story_prompt(self, surface: pygame.Surface, story_manager: story.StoryManager) -> None:
-        if not story_manager.active_event:
-            return
-        event = story_manager.active_event
-        overlay = pygame.Surface((surface.get_width(), 140), pygame.SRCALPHA)
-        overlay.fill((10, 10, 30, 180))
-        surface.blit(overlay, (0, surface.get_height() - overlay.get_height() - 20))
-        title_surface = self.large_font.render(event.title, True, pygame.Color(255, 210, 150))
-        description_surface = self.font.render(event.description, True, pygame.Color(220, 220, 230))
-        surface.blit(title_surface, (40, surface.get_height() - overlay.get_height()))
-        surface.blit(description_surface, (40, surface.get_height() - overlay.get_height() + 50))
+        journal_lines = story.journal_entries()[:settings.JOURNAL_MAX_ENTRIES]
+        if journal_lines:
+            self.journal_text.text = "Journal:\n" + "\n".join(journal_lines)
+        else:
+            self.journal_text.text = ""
 
-    def draw_journal(self, surface: pygame.Surface, story_manager: story.StoryManager) -> None:
-        lines = story_manager.quest_journal_text()
-        journal_width = 340
-        journal_height = 200
-        panel = pygame.Surface((journal_width, journal_height), pygame.SRCALPHA)
-        panel.fill((10, 10, 10, 170))
-        surface.blit(panel, (surface.get_width() - journal_width - 20, surface.get_height() - journal_height - 20))
+        self._compass_timer -= dt
+        if self._compass_timer <= 0.0:
+            self._compass_timer = settings.COMPASS_UPDATE_INTERVAL
+            target = self._nearest_inactive_beacon(player.position, beacons)
+            if target is None:
+                self.compass_text.text = "Compass: All beacons restored"
+            else:
+                heading, distance = _heading_to_target(player.position, target.position)
+                self.compass_text.text = f"Compass: {heading} — {int(distance)}m"
 
-        y = surface.get_height() - journal_height - 10
-        for line in lines:
-            text_surface = self.small_font.render(line, True, pygame.Color(230, 230, 240))
-            surface.blit(text_surface, (surface.get_width() - journal_width + 10, y))
-            y += text_surface.get_height() + 2
+    def _nearest_inactive_beacon(self, position, beacons: Iterable[LumiteBeacon]) -> LumiteBeacon | None:
+        inactive = [b for b in beacons if not b.activated]
+        if not inactive:
+            return None
+        return min(inactive, key=lambda b: (b.world_position - position).length())
 
-    def draw_minimap(self, surface: pygame.Surface, tile_map: world.World, player_rect: pygame.Rect, camera_rect: pygame.Rect) -> None:
-        map_size = 200
-        minimap = pygame.Surface((map_size, map_size))
-        minimap.fill((0, 0, 0))
 
-        scale_x = map_size / tile_map.width
-        scale_y = map_size / tile_map.height
-
-        for x in range(tile_map.width):
-            for y in range(tile_map.height):
-                tile = tile_map.tiles[x][y]
-                color = tile.color
-                minimap.set_at((int(x * scale_x), int(y * scale_y)), color)
-
-        player_pos = (
-            int(player_rect.centerx / settings.TILE_SIZE * scale_x),
-            int(player_rect.centery / settings.TILE_SIZE * scale_y),
-        )
-        pygame.draw.circle(minimap, pygame.Color(255, 255, 255), player_pos, 4)
-
-        surface.blit(minimap, (20, surface.get_height() - map_size - 20))
-        border_rect = pygame.Rect(20, surface.get_height() - map_size - 20, map_size, map_size)
-        pygame.draw.rect(surface, pygame.Color(255, 255, 255), border_rect, 2)
-
+def _heading_to_target(origin, target):
+    direction = target - origin
+    distance = direction.length()
+    angle = math.degrees(math.atan2(direction.x, direction.z)) % 360
+    headings = [
+        (0, "N"),
+        (45, "NE"),
+        (90, "E"),
+        (135, "SE"),
+        (180, "S"),
+        (225, "SW"),
+        (270, "W"),
+        (315, "NW"),
+    ]
+    closest = min(headings, key=lambda item: abs(angle - item[0]))[1]
+    return closest, distance

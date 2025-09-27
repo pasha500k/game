@@ -1,13 +1,14 @@
-"""Game entities such as the player and NPCs."""
+"""Entity definitions for the 3D adventure."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
+from dataclasses import dataclass
+from typing import Dict, Iterable, List
 
-import pygame
+from ursina import Entity, Text, Vec3, color, held_keys
+from ursina.prefabs.first_person_controller import FirstPersonController
 
-from . import settings, world
+from . import settings
 
 
 @dataclass
@@ -16,144 +17,76 @@ class DialogueLine:
     text: str
 
 
-@dataclass
-class NPC:
-    name: str
-    position: pygame.Vector2
-    color: pygame.Color
-    dialogue: List[DialogueLine] = field(default_factory=list)
-    dialogue_index: int = 0
-    talk_radius: float = 80.0
-
-    def interact(self) -> DialogueLine | None:
-        if not self.dialogue:
-            return None
-        line = self.dialogue[self.dialogue_index]
-        self.dialogue_index = (self.dialogue_index + 1) % len(self.dialogue)
-        return line
-
-    def draw(self, surface: pygame.Surface, camera_rect: pygame.Rect) -> None:
-        radius = 20
-        screen_pos = (
-            int(self.position.x - camera_rect.left),
-            int(self.position.y - camera_rect.top),
-        )
-        pygame.draw.circle(surface, self.color, screen_pos, radius)
-        name_font = pygame.font.SysFont("arial", 18)
-        text_surface = name_font.render(self.name, True, pygame.Color(255, 255, 255))
-        text_rect = text_surface.get_rect(center=(screen_pos[0], screen_pos[1] - radius - 12))
-        surface.blit(text_surface, text_rect)
-
-
 class Player:
-    """The player's avatar exploring the world."""
+    """Wrapper around Ursina's first person controller with RPG stats."""
 
-    def __init__(self, position: Tuple[int, int]) -> None:
-        self.position = pygame.Vector2(position)
-        self.radius = 20
-        self.speed = settings.PLAYER_SPEED
-        self.health = 100
-        self.max_health = 100
-        self.energy = 100
-        self.max_energy = 100
-        self.inventory: Dict[str, int] = {"Lumite": 0, "Herbs": 0}
-        self.active_effects: Dict[str, float] = {}
-        self.facing = pygame.Vector2(1, 0)
-        self.sprint_cooldown = 0.0
+    def __init__(self, position: Vec3) -> None:
+        self.controller = FirstPersonController(position=position, speed=settings.PLAYER_WALK_SPEED)
+        self.controller.cursor.visible = False
+        self.controller.gravity = 1.0
+        self.controller.jump_height = settings.PLAYER_JUMP_HEIGHT
+        self.controller.mouse_sensitivity = Vec3(120, 120, 120)
 
-    def handle_input(self, dt: float, tile_map: world.World, keys: pygame.key.ScancodeWrapper) -> None:
-        direction = pygame.Vector2(0, 0)
-        if keys[pygame.K_w] or keys[pygame.K_UP]:
-            direction.y -= 1
-        if keys[pygame.K_s] or keys[pygame.K_DOWN]:
-            direction.y += 1
-        if keys[pygame.K_a] or keys[pygame.K_LEFT]:
-            direction.x -= 1
-        if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
-            direction.x += 1
+        self.health = settings.PLAYER_MAX_HEALTH
+        self.stamina = settings.PLAYER_STAMINA_MAX
+        self.inventory: Dict[str, int] = {}
+        self._sprinting: bool = False
 
-        sprinting = keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]
+    # ------------------------------------------------------------------
+    @property
+    def position(self) -> Vec3:
+        return self.controller.position
 
-        if direction.length_squared() > 0:
-            direction = direction.normalize()
-            self.facing = direction
-        else:
-            direction = pygame.Vector2(0, 0)
-
-        speed = self.speed
-        if sprinting and self.energy > 0:
-            speed *= settings.PLAYER_SPRINT_MULTIPLIER
-            self.energy = max(0, self.energy - 35 * dt)
-        else:
-            self.energy = min(self.max_energy, self.energy + 20 * dt)
-
-        self.sprint_cooldown = max(0.0, self.sprint_cooldown - dt)
-
-        self._move(direction * speed * dt, tile_map)
-
-    def _move(self, movement: pygame.Vector2, tile_map: world.World) -> None:
-        if movement.length_squared() == 0:
-            return
-
-        new_position = self.position + movement
-        if self._is_position_walkable(new_position, tile_map):
-            self.position = new_position
-        else:
-            # Try horizontal and vertical separately for sliding along edges
-            horizontal = pygame.Vector2(movement.x, 0)
-            vertical = pygame.Vector2(0, movement.y)
-            if horizontal.length_squared() and self._is_position_walkable(self.position + horizontal, tile_map):
-                self.position += horizontal
-            elif vertical.length_squared() and self._is_position_walkable(self.position + vertical, tile_map):
-                self.position += vertical
-
-    def _is_position_walkable(self, position: pygame.Vector2, tile_map: world.World) -> bool:
-        rect = pygame.Rect(0, 0, self.radius * 2, self.radius * 2)
-        rect.center = (int(position.x), int(position.y))
-        for sample in (
-            rect.center,
-            rect.topleft,
-            rect.topright,
-            rect.bottomleft,
-            rect.bottomright,
-        ):
-            tile_x = int(sample[0] // settings.TILE_SIZE)
-            tile_y = int(sample[1] // settings.TILE_SIZE)
-            if not tile_map.is_walkable(tile_x, tile_y):
-                return False
-        return True
-
-    def take_damage(self, amount: float) -> None:
-        self.health = max(0, self.health - amount)
-
-    def heal(self, amount: float) -> None:
-        self.health = min(self.max_health, self.health + amount)
-
-    def add_item(self, name: str, amount: int = 1) -> None:
-        self.inventory[name] = self.inventory.get(name, 0) + amount
-
-    def apply_effect(self, name: str, duration: float) -> None:
-        self.active_effects[name] = duration
+    @position.setter
+    def position(self, value: Vec3) -> None:
+        self.controller.position = value
 
     def update(self, dt: float) -> None:
-        to_remove = []
-        for effect, time_left in self.active_effects.items():
-            time_left -= dt
-            if time_left <= 0:
-                to_remove.append(effect)
-        for effect in to_remove:
-            del self.active_effects[effect]
+        moving = any(held_keys[key] for key in ("w", "a", "s", "d"))
+        sprinting = moving and held_keys["shift"] and self.stamina > 0.0
+        self._sprinting = sprinting
+        target_speed = settings.PLAYER_WALK_SPEED * (settings.PLAYER_SPRINT_MULTIPLIER if sprinting else 1.0)
+        self.controller.speed = target_speed
 
-    def draw(self, surface: pygame.Surface, camera_rect: pygame.Rect) -> None:
-        screen_pos = (
-            int(self.position.x - camera_rect.left),
-            int(self.position.y - camera_rect.top),
-        )
-        pygame.draw.circle(surface, settings.PLAYER_COLOR, screen_pos, self.radius)
-        pygame.draw.circle(surface, pygame.Color(60, 60, 60), screen_pos, self.radius, 2)
+        if sprinting:
+            self.stamina = max(0.0, self.stamina - settings.PLAYER_STAMINA_DRAIN * dt)
+        else:
+            regen = settings.PLAYER_STAMINA_REGEN * (1.4 if self.controller.grounded else 0.6)
+            self.stamina = min(settings.PLAYER_STAMINA_MAX, self.stamina + regen * dt)
 
-    def get_rect(self) -> pygame.Rect:
-        rect = pygame.Rect(0, 0, self.radius * 2, self.radius * 2)
-        rect.center = (int(self.position.x), int(self.position.y))
-        return rect
+    def heal(self, amount: float) -> None:
+        self.health = min(settings.PLAYER_MAX_HEALTH, self.health + amount)
 
+    def apply_damage(self, amount: float) -> None:
+        self.health = max(0.0, self.health - amount)
+
+    def add_item(self, name: str, count: int = 1) -> None:
+        self.inventory[name] = self.inventory.get(name, 0) + max(1, count)
+
+    def teleport(self, destination: Vec3) -> None:
+        self.position = destination
+
+    def stamina_ratio(self) -> float:
+        return self.stamina / settings.PLAYER_STAMINA_MAX
+
+    def health_ratio(self) -> float:
+        return self.health / settings.PLAYER_MAX_HEALTH
+
+
+class NPC(Entity):
+    """A guide or quest giver the player can interact with."""
+
+    def __init__(self, name: str, position: Vec3, tint: tuple[int, int, int], dialogue: Iterable[DialogueLine]) -> None:
+        super().__init__(model="cube", color=color.rgb(*tint), scale=(1.2, 2.4, 1.2), position=position)
+        self.name = name
+        self._lines: List[DialogueLine] = list(dialogue)
+        self._index = 0
+        self._label = Text(parent=self, text=name, color=color.white, y=1.6, billboard=True, origin=(0, 0))
+        self.cooldown = 0.0
+
+    def speak(self) -> DialogueLine | None:
+        if not self._lines:
+            return None
+        line = self._lines[self._index % len(self._lines)]
+        self._index += 1
+        return line

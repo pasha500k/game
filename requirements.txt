@@ -1,1 +1,2 @@
-pygame>=2.5
+ursina>=5.3.0
+perlin-noise>=1.12

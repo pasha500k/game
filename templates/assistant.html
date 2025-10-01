@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row g-4">
+  <div class="col-lg-5">
+    <div class="card card-shadow p-4 h-100">
+      <h2 class="h4 mb-3">{{ t('assistant_title') }}</h2>
+      <p class="text-muted">{{ t('assistant_intro') }}</p>
+      <form method="post">
+        <div class="mb-3">
+          <label class="form-label" for="subject">{{ t('assistant_subject') }}</label>
+          <select class="form-select" id="subject" name="subject">
+            <option value="">—</option>
+            {% for key, quiz in quizzes.items() %}
+              <option value="{{ key }}">{{ quiz.title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="question">{{ t('assistant_placeholder') }}</label>
+          <textarea class="form-control" id="question" name="question" rows="4" required></textarea>
+        </div>
+        <button class="btn btn-primary" type="submit">{{ t('nav_assistant') }}</button>
+      </form>
+      {% if not g.user.openai_token %}
+        <div class="alert alert-warning mt-3">{{ t('assistant_missing_token') }}</div>
+      {% endif %}
+      {% if error %}
+        <div class="alert alert-danger mt-3">{{ error }}</div>
+      {% endif %}
+    </div>
+  </div>
+  <div class="col-lg-7">
+    <div class="card card-shadow p-4 h-100 d-flex flex-column">
+      <h3 class="h5 mb-3">Чат</h3>
+      <div class="flex-grow-1 overflow-auto" style="max-height: 480px;">
+        {% for entry in history %}
+          <div class="mb-3">
+            <div class="chat-bubble user">
+              {% if entry.subject %}
+                <span class="badge bg-primary mb-2">{{ quizzes[entry.subject].title }}</span><br>
+              {% endif %}
+              {{ entry.question }}
+            </div>
+            <div class="chat-bubble ai mt-2">{{ entry.answer }}</div>
+          </div>
+        {% else %}
+          <p class="text-muted">{{ t('assistant_intro') }}</p>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

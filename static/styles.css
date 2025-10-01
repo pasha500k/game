@@ -1,0 +1,44 @@
+body {
+  background: radial-gradient(circle at top, #f9f9ff, #eef2ff 45%, #e0e7ff);
+  min-height: 100vh;
+}
+
+.navbar.bg-gradient {
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+}
+
+.card-shadow {
+  box-shadow: 0 20px 45px rgba(79, 70, 229, 0.15);
+  border: none;
+  border-radius: 1.2rem;
+}
+
+.hero-section {
+  padding: 6rem 0;
+}
+
+.hero-section h1 {
+  font-weight: 700;
+}
+
+.badge-level {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+}
+
+.chat-bubble {
+  border-radius: 1rem;
+  padding: 1rem;
+  background: #ffffff;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+}
+
+.chat-bubble.user {
+  background: #dbeafe;
+  margin-left: auto;
+}
+
+.chat-bubble.ai {
+  background: #ede9fe;
+  margin-right: auto;
+}

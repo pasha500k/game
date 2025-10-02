@@ -12,8 +12,8 @@
             <p class="fw-semibold mb-2">{{ loop.index }}. {{ question.prompt }}</p>
             {% for option in question.options %}
               <div class="form-check">
-                <input class="form-check-input" type="radio" name="{{ key }}_{{ loop.parent.index0 }}" value="{{ option }}" id="{{ key }}_{{ loop.parent.index0 }}_{{ loop.index }}" required>
-                <label class="form-check-label" for="{{ key }}_{{ loop.parent.index0 }}_{{ loop.index }}">{{ option }}</label>
+                <input class="form-check-input" type="radio" name="{{ key }}_{{ loop.parentloop.index0 }}" value="{{ option }}" id="{{ key }}_{{ loop.parentloop.index0 }}_{{ loop.index }}" required>
+                <label class="form-check-label" for="{{ key }}_{{ loop.parentloop.index0 }}_{{ loop.index }}">{{ option }}</label>
               </div>
             {% endfor %}
           </div>

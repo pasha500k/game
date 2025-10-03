@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-6">
+    <div class="card card-shadow p-4">
+      <h2 class="h4 mb-3">{{ t('settings_title') }}</h2>
+      <form method="post">
+        <div class="mb-3">
+          <label class="form-label" for="language">{{ t('settings_language') }}</label>
+          <select class="form-select" id="language" name="language">
+            <option value="ru" {% if g.user.language == 'ru' %}selected{% endif %}>{{ t('language_option_ru') }}</option>
+            <option value="en" {% if g.user.language == 'en' %}selected{% endif %}>{{ t('language_option_en') }}</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="openai_token">{{ t('settings_api_token') }}</label>
+          <input class="form-control" type="password" id="openai_token" name="openai_token" value="{{ g.user.openai_token or '' }}" placeholder="sk-...">
+          <div class="form-text">{{ t('settings_api_hint') }}</div>
+        </div>
+        <button class="btn btn-primary" type="submit">{{ t('settings_save') }}</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row g-4 align-items-stretch">
+  <div class="col-lg-5">
+    <div class="card card-shadow p-4 h-100">
+      <h2 class="h4 mb-3">{{ t('dashboard_title') }}</h2>
+      <p class="text-muted">{{ t('dashboard_intro') }}</p>
+      <ul class="list-group list-group-flush mt-4">
+        {% for key, quiz in quizzes.items() %}
+          {% set stats = diagnostics_snapshot.get(key) %}
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <span>{{ quiz.title }}</span>
+            {% if stats %}
+              <span class="badge bg-primary badge-level">{{ t('level_' + stats.level) }} • {{ (stats.score * 100) | round(0) }}%</span>
+            {% else %}
+              <span class="badge bg-secondary badge-level">{{ t('diagnostic_pending') }}</span>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+      <a class="btn btn-outline-primary mt-4" href="{{ url_for('diagnostics') }}">{{ t('take_diagnostics') }}</a>
+    </div>
+  </div>
+  <div class="col-lg-7">
+    <div class="card card-shadow p-4 h-100">
+      <h3 class="h5 mb-3">{{ t('plan_title') }}</h3>
+      {% if plan %}
+        {% for subject, steps in plan.items() %}
+          <div class="mb-4">
+            <h4 class="h6 text-uppercase text-muted">{{ quizzes[subject].title }}</h4>
+            <ul class="ps-3">
+              {% for step in steps %}
+                <li class="mb-2">{{ step }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+        {% endfor %}
+      {% else %}
+        <p class="text-muted">{{ t('take_diagnostics') }}</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

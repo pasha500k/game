@@ -5,6 +5,7 @@ This repository contains high-level design documentation for a proposed Unreal E
 ## Contents
 - `docs/chernobyl_game_plan.md` – Production roadmap, feature pillars, risk assessment, and milestone checklist.
 - `docs/importing_scene_stub.md` – Instructions for using the provided Unreal Engine scene stub.
+- `docs/full_project_delivery.md` – Scope, tooling, and pipeline guidance for building the full playable project.
 - `UnrealProject/` – Minimal Unreal Engine 5.5.4 project scaffold with an importable level layout.
 
 ## Getting Started

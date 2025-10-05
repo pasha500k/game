@@ -1,0 +1,66 @@
+Begin Map
+   Begin Level NAME=PersistentLevel
+      Begin Actor Class=WorldSettings Name=WorldSettings_0 Archetype=WorldSettings'/Script/Engine.Default__WorldSettings'
+         Begin Object Class=WorldPartition Name="WorldPartition_0"
+         End Object
+         bEnableWorldBoundsChecks=False
+         DefaultGameMode=/Script/Engine.GameModeBase
+         DefaultPawnClass=/Script/Engine.DefaultPawn
+         WorldGravityZ=-980.000000
+      End Actor
+      Begin Actor Class=SkyLight Name=SkyLight_Dynamic Archetype=SkyLight'/Script/Engine.Default__SkyLight'
+         Mobility=Movable
+         bAffectTranslucentLighting=True
+         LightGuid=(A=0,B=0,C=0,D=0)
+         Begin Object Name=SkyLightComponent0
+            SourceType=SLS_SpecifiedCubemap
+            CubemapResolution=128
+         End Object
+      End Actor
+      Begin Actor Class=DirectionalLight Name=SunLight Archetype=DirectionalLight'/Script/Engine.Default__DirectionalLight'
+         Mobility=Movable
+         bUsedAsAtmosphereSunLight=True
+         Intensity=10.000000
+         LightGuid=(A=0,B=0,C=0,D=0)
+         Begin Object Name=DirectionalLightComponent0
+            Mobility=Movable
+            bEnableLightShaftBloom=True
+            LightShaftBloom=0.25
+         End Object
+      End Actor
+      Begin Actor Class=StaticMeshActor Name=SarcofagEntranceMarker
+         StaticMeshComponent=StaticMeshComponent0
+         RootComponent=StaticMeshComponent0
+         Begin Object Class=StaticMeshComponent Name=StaticMeshComponent0
+            StaticMesh=/Script/Engine.StaticMesh'/Engine/BasicShapes/Cube.Cube'
+            RelativeScale3D=(X=4.000000,Y=2.000000,Z=1.000000)
+            RelativeLocation=(X=5000.000000,Y=0.000000,Z=0.000000)
+         End Object
+      End Actor
+      Begin Actor Class=StaticMeshActor Name=ReactorLineupMarker
+         StaticMeshComponent=StaticMeshComponent1
+         RootComponent=StaticMeshComponent1
+         Begin Object Class=StaticMeshComponent Name=StaticMeshComponent1
+            StaticMesh=/Script/Engine.StaticMesh'/Engine/BasicShapes/Cube.Cube'
+            RelativeScale3D=(X=12.000000,Y=1.000000,Z=1.000000)
+            RelativeLocation=(X=6000.000000,Y=0.000000,Z=0.000000)
+         End Object
+      End Actor
+      Begin Actor Class=StaticMeshActor Name=RailwayGuideSpline
+         StaticMeshComponent=StaticMeshComponent2
+         RootComponent=StaticMeshComponent2
+         Begin Object Class=StaticMeshComponent Name=StaticMeshComponent2
+            StaticMesh=/Script/Engine.StaticMesh'/Engine/BasicShapes/Cylinder.Cylinder'
+            RelativeScale3D=(X=0.200000,Y=0.200000,Z=20.000000)
+            RelativeLocation=(X=0.000000,Y=0.000000,Z=0.000000)
+         End Object
+      End Actor
+      Begin Actor Class=Note Name=SceneDesignNotes
+         Begin Object Class=NoteComponent Name=NoteComponent0
+            Text="Guide markers for importing GIS heightmap, railway spline, and Reactor 1-6 block layout. Replace with production assets."
+         End Object
+      End Actor
+   End Level
+Begin Surface
+End Surface
+End Map

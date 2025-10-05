@@ -1,0 +1,23 @@
+{
+    "FileVersion": 3,
+    "EngineAssociation": "5.5.4",
+    "Category": "Games",
+    "Description": "Prototype project for the Chernobyl infiltration experience",
+    "Modules": [
+        {
+            "Name": "ChernobylInfiltration",
+            "Type": "Runtime",
+            "LoadingPhase": "Default"
+        }
+    ],
+    "TargetPlatforms": [
+        "Win64",
+        "Linux"
+    ],
+    "Plugins": [
+        {
+            "Name": "WorldPartitionHLODUtilities",
+            "Enabled": true
+        }
+    ]
+}
